@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Habit Tracker</title>
+<style>
+:root{--navy:#0f2a5c;--ink:#1b2333;--bg:#f6f4ee;--line:#d9d5c8;--ok:#1a9c4a;--bad:#c62f3b}
+*{box-sizing:border-box}body{margin:0;font:14px/1.4 "Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--navy);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:14px}
+header h1{font:600 20px Georgia,serif;margin:0;flex:1}
+button{font:inherit;cursor:pointer;border:1px solid var(--navy);background:#fff;color:var(--navy);padding:5px 12px;border-radius:4px}
+button.p{background:var(--navy);color:#fff}header button{background:none;color:#fff;border-color:#fff8}
+main{padding:16px 20px;display:grid;gap:16px}
+.bar{background:#fff5d6;border:1px solid #e3c458;padding:8px 12px;border-radius:4px}
+.bar.red{background:#fde4e6;border-color:var(--bad)}
+section{background:#fff;border:1px solid var(--line);border-radius:6px;padding:14px;overflow-x:auto}
+h2{font:600 16px Georgia,serif;margin:0 0 10px}
+form{display:flex;gap:8px;flex-wrap:wrap}input{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:4px}
+table{border-collapse:collapse;min-width:100%}th,td{text-align:center;padding:3px 2px;font-size:12px}
+th{background:var(--navy);color:#fff;font-weight:600}th.n,td.n{text-align:left;padding-left:8px;min-width:150px;white-space:nowrap}
+td.n{font-size:13px}td.n small{color:#888}td.n b{cursor:pointer;color:#bbb;margin-left:6px}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--ok);cursor:pointer}
+input:disabled{opacity:.3;cursor:default}tr.s td{font-weight:600;border-top:1px solid var(--line)}
+th.t{outline:2px solid #f2b705;outline-offset:-2px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.stat{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:8px}.stat div{font-size:12px;color:#666}.stat b{display:block;font:600 26px Georgia,serif;color:var(--navy)}
+li{margin:4px 0}li button{padding:1px 8px;margin-left:8px}.owed{color:var(--bad)}.muted{color:#888}
+.pb{height:8px;background:#eee;border-radius:4px;width:120px;display:inline-block;vertical-align:middle}.pb i{display:block;height:100%;background:var(--ok);border-radius:4px}
+</style></head><body>
+<header><h1>Habit Tracker</h1><button id="pv">&lt;</button><b id="ml" style="min-width:140px;text-align:center"></b><button id="nx">&gt;</button>
+<span>Remind at <input id="rt" type="time" style="padding:2px"></span></header>
+<main>
+<div id="alerts"></div>
+<section><h2>Add a task</h2><form id="af"><input id="an" placeholder="Task name (e.g. Exercise)" required style="flex:1;min-width:200px">
+<input id="ad" type="date" required title="Task starts on this date"><button class="p">Add task</button></form>
+<p class="muted" style="margin:6px 0 0">The date sets the month and the first day the task counts. Missed days start counting from the day you add it.</p></section>
+<section><div id="chart"></div><div id="tbl"></div></section>
+<div class="grid">
+<section><h2>Monthly performance</h2><div id="perf"></div></section>
+<section><h2>Punishments</h2><div id="owed"></div>
+<form id="pf" style="margin-top:8px"><input id="pn" placeholder="Add a punishment" required style="flex:1"><button>Add</button></form><ul id="pl"></ul></section>
+</div></main>
+<script>
+const $=s=>document.querySelector(s),K='habit-tracker-v1',pad=n=>String(n).padStart(2,'0');
+let D=JSON.parse(localStorage.getItem(K)||'null')||{tasks:[],checks:{},punish:['20 push-ups','1 hour no social media','Cold shower','Clean my room'],owed:[],judged:{},remind:'21:00',lastRemind:''};
+const save=()=>localStorage.setItem(K,JSON.stringify(D));
+const dk=(y,m,d)=>`${y}-${pad(m+1)}-${pad(d)}`,now=()=>new Date(),tk=()=>{const t=now();return dk(t.getFullYear(),t.getMonth(),t.getDate())};
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let Y=now().getFullYear(),M=now().getMonth();
+const mkey=(y,m)=>`${y}-${pad(m+1)}`,dim=()=>new Date(Y,M+1,0).getDate();
+const mtasks=()=>D.tasks.filter(t=>t.month===mkey(Y,M));
+const done=(id,k)=>(D.checks[k]||[]).includes(id);
+const activeOn=(t,d)=>d>=t.start;
+
+function judge(){ // missed past days -> punishment
+  const today=tk();let ch=false;
+  D.tasks.forEach(t=>{const[y,m]=t.month.split('-').map(Number);const n=new Date(y,m,0).getDate();
+    for(let d=t.start;d<=n;d++){const k=dk(y,m-1,d);if(k>=today||k<t.created)continue;
+      const j=t.id+'|'+k;if(D.judged[j]||done(t.id,k))continue;D.judged[j]=1;ch=true;
+      const p=D.punish.length?D.punish[Math.floor(Math.random()*D.punish.length)]:'(add punishments to the list!)';
+      D.owed.push({id:Date.now()+Math.random(),date:k,task:t.name,p});}});
+  if(ch)save();
+}
+function remind(){
+  const t=now(),hm=pad(t.getHours())+':'+pad(t.getMinutes()),k=tk();
+  if(hm<D.remind||D.lastRemind===k)return;
+  const left=D.tasks.filter(x=>x.month===k.slice(0,7)&&t.getDate()>=x.start&&!done(x.id,k));
+  D.lastRemind=k;save();
+  if(left.length&&window.Notification)Notification.requestPermission().then(()=>new Notification('Tasks still open today',{body:left.map(x=>x.name).join(', ')+'. Miss them and you owe a punishment.'}));
+}
+function stats(){
+  const n=dim(),t=now(),cur=(Y===t.getFullYear()&&M===t.getMonth()),last=cur?t.getDate():(new Date(Y,M,1)>t?0:n),ts=mtasks(),pct=[];
+  for(let d=1;d<=n;d++){const a=ts.filter(x=>activeOn(x,d));const c=a.filter(x=>done(x.id,dk(Y,M,d))).length;
+    pct.push({d,c,a:a.length,p:a.length?Math.round(100*c/a.length):null});}
+  return{n,last,pct,ts,cur};
+}
+function render(){
+  $('#ml').textContent=new Date(Y,M,1).toLocaleString('en',{month:'long',year:'numeric'});
+  const{n,last,pct,ts,cur}=stats(),today=tk();
+  // grid
+  let h='<table><tr><th class="n">Task</th>';
+  for(let d=1;d<=n;d++)h+=`<th class="${dk(Y,M,d)===today?'t':''}">${'SMTWTFS'[new Date(Y,M,d).getDay()]}<br>${d}</th>`;
+  h+='</tr>';
+  ts.forEach(t=>{h+=`<tr><td class="n">${esc(t.name)} <small>from ${t.start}</small><b data-del="${t.id}" title="Delete">×</b></td>`;
+    for(let d=1;d<=n;d++){const k=dk(Y,M,d),dis=d<t.start||k>today;
+      h+=`<td><input type="checkbox" data-t="${t.id}" data-k="${k}" ${done(t.id,k)?'checked':''} ${dis?'disabled':''}></td>`;}h+='</tr>';});
+  if(!ts.length)h+=`<tr><td class="n muted" colspan="${n+1}">No tasks this month. Add one above.</td></tr>`;
+  h+='<tr class="s"><td class="n">Completed</td>'+pct.map(x=>`<td>${x.d<=last&&x.a?x.c:''}</td>`).join('')+'</tr>';
+  h+='<tr class="s"><td class="n">Completion</td>'+pct.map(x=>`<td>${x.d<=last&&x.p!=null?x.p+'%':''}</td>`).join('')+'</tr></table>';
+  $('#tbl').innerHTML=h;
+  // chart
+  const W=Math.max(700,n*30),H=130,px=d=>40+(d-1)*(W-60)/(n-1),py=p=>10+(100-p)*(H-40)/100;
+  const pts=pct.filter(x=>x.d<=last&&x.p!=null);
+  let s=`<svg width="${W}" height="${H}">`+[0,50,100].map(v=>`<line x1="40" x2="${W-20}" y1="${py(v)}" y2="${py(v)}" stroke="#eee"/><text x="34" y="${py(v)+4}" font-size="10" text-anchor="end" fill="#888">${v}%</text>`).join('');
+  s+=`<polyline fill="none" stroke="#1a9c4a" stroke-width="2.5" points="${pts.map(x=>px(x.d)+','+py(x.p)).join(' ')}"/>`+pts.map(x=>`<circle cx="${px(x.d)}" cy="${py(x.p)}" r="4" fill="#1a9c4a"/>`).join('')+
+    pct.map(x=>`<text x="${px(x.d)}" y="${H-6}" font-size="10" text-anchor="middle" fill="#888">${x.d}</text>`).join('')+'</svg>';
+  $('#chart').innerHTML=s;
+  // performance
+  const cnt=pct.filter(x=>x.d<=last&&x.a),tot=cnt.reduce((a,x)=>a+x.a,0),dn=cnt.reduce((a,x)=>a+x.c,0),ov=tot?Math.round(100*dn/tot):0;
+  const perfect=cnt.filter(x=>x.c===x.a).length;let best=0,run=0;cnt.forEach(x=>{run=x.c===x.a?run+1:0;best=Math.max(best,run)});
+  const grade=ov>=90?'Excellent':ov>=75?'Good':ov>=50?'Needs work':'Poor';
+  let p=`<div class="stat"><div><b>${ov}%</b>overall</div><div><b>${perfect}</b>perfect days</div><div><b>${best}</b>best streak</div><div><b>${grade}</b>${cur?'so far':'final result'}</div></div>`;
+  ts.forEach(t=>{let a=0,c=0;for(let d=t.start;d<=last;d++){a++;if(done(t.id,dk(Y,M,d)))c++}const v=a?Math.round(100*c/a):0;
+    p+=`<div style="margin:4px 0"><span style="display:inline-block;width:150px">${esc(t.name)}</span><span class="pb"><i style="width:${v}%"></i></span> ${v}% <span class="muted">(${c}/${a})</span></div>`;});
+  $('#perf').innerHTML=p||'<span class="muted">Add tasks to see your performance.</span>';
+  // punishments
+  const open=D.owed.filter(o=>!o.done);
+  $('#owed').innerHTML=open.length?`<b class="owed">Owed (${open.length})</b><ul>`+open.map(o=>`<li><span class="owed">${esc(o.p)}</span> <span class="muted">for missing "${esc(o.task)}" on ${o.date}</span><button data-ok="${o.id}">Done</button></li>`).join('')+'</ul>':'<span class="muted">Nothing owed. Keep it up.</span>';
+  $('#pl').innerHTML=D.punish.map((x,i)=>`<li>${esc(x)}<button data-rp="${i}">Remove</button></li>`).join('');
+  $('#alerts').innerHTML=open.length?`<div class="bar red">You owe ${open.length} punishment${open.length>1?'s':''}. Do them and mark Done.</div>`:'';
+  const left=D.tasks.filter(x=>x.month===today.slice(0,7)&&+today.slice(8)>=x.start&&!done(x.id,today)).length;
+  if(left)$('#alerts').innerHTML+=`<div class="bar" style="margin-top:6px">${left} task${left>1?'s':''} still open today.</div>`;
+}
+document.addEventListener('change',e=>{const c=e.target;if(!c.dataset.t)return;const id=+c.dataset.t,a=D.checks[c.dataset.k]||(D.checks[c.dataset.k]=[]);
+  if(c.checked){if(!a.includes(id))a.push(id)}else D.checks[c.dataset.k]=a.filter(x=>x!==id);
+  const j=id+'|'+c.dataset.k;delete D.judged[j];save();render();});
+document.addEventListener('click',e=>{const d=e.target.dataset;
+  if(d.del&&confirm('Delete this task?')){D.tasks=D.tasks.filter(t=>t.id!=d.del);save();render()}
+  if(d.ok){D.owed.find(o=>o.id==d.ok).done=1;save();render()}
+  if(d.rp){D.punish.splice(+d.rp,1);save();render()}});
+$('#af').onsubmit=e=>{e.preventDefault();const[y,m,dd]=$('#ad').value.split('-').map(Number);
+  D.tasks.push({id:Date.now(),name:$('#an').value.trim(),month:mkey(y,m-1),start:dd,created:tk()>$('#ad').value?tk():$('#ad').value});
+  Y=y;M=m-1;$('#an').value='';save();render();};
+$('#pf').onsubmit=e=>{e.preventDefault();D.punish.push($('#pn').value.trim());$('#pn').value='';save();render();};
+$('#pv').onclick=()=>{M--;if(M<0){M=11;Y--}render()};$('#nx').onclick=()=>{M++;if(M>11){M=0;Y++}render()};
+$('#rt').value=D.remind;$('#rt').onchange=e=>{D.remind=e.target.value;D.lastRemind='';save()};
+$('#ad').value=tk();
+judge();render();remind();setInterval(()=>{judge();remind();render()},30000);
+</script></body></html>
